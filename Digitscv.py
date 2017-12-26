@@ -1,38 +1,49 @@
 
+
+import numpy as np
 import cv2
-import numpy as np      # for hsplit
-from PIL import Image   # python-imaging library for resizing
+from PIL import Image
 
 
-def Centroid_x_coordinate ( contour ):
+def x_cord_contour(contour):
+    # This function take a contour from findContours
+    # it then outputs the x centroid coordinates
+
+    if cv2.contourArea(contour) > 10:
+        M = cv2.moments(contour)
+        return (int(M['m10'] / M['m00']))
 
 
-    if ( cv2.contourArea( contour ) > 10):
+def makeSquare(not_square):
+    # This function takes an image and makes the dimenions square
+    # It adds black pixels as the padding where needed
 
-        M = cv2.moments( contour )
-        return int ( M['m10'] / M['m00'])
-
-def make_square ( image ):
-
-    height = image.shape[0]
-    width = image.shape[1]
-
-    if ( height == width ):
-        return image
-
-    height = 2 * height
-    width = 2 * width
-
-    image = cv2.resize( image, (width, height), interpolation=cv2.INTER_CUBIC)
-
-    if ( height > width ):
-
-        pad = ( height - width ) / 2
-        return cv2.copyMakeBorder( image, 0, 0, pad, pad, cv2.BORDER_CONSTANT, value=[0,0,0])
-
-    pad = ( width - height ) / 2
-    return cv2.copyMakeBorder( image, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=[0,0,0])
-
+    BLACK = [0, 0, 0]
+    img_dim = not_square.shape
+    height = img_dim[0]
+    width = img_dim[1]
+    # print("Height = ", height, "Width = ", width)
+    if (height == width):
+        square = not_square
+        return square
+    else:
+        doublesize = cv2.resize(not_square, (2 * width, 2 * height), interpolation=cv2.INTER_CUBIC)
+        height = height * 2
+        width = width * 2
+        # print("New Height = ", height, "New Width = ", width)
+        if (height > width):
+            pad = (height - width) / 2
+            # print("Padding = ", pad)
+            doublesize_square = cv2.copyMakeBorder(doublesize, 0, 0, pad, \
+                                                   pad, cv2.BORDER_CONSTANT, value=BLACK)
+        else:
+            pad = (width - height) / 2
+            # print("Padding = ", pad)
+            doublesize_square = cv2.copyMakeBorder(doublesize, pad, pad, 0, 0, \
+                                                   cv2.BORDER_CONSTANT, value=BLACK)
+    doublesize_square_dim = doublesize_square.shape
+    # print("Sq Height = ", doublesize_square_dim[0], "Sq Width = ", doublesize_square_dim[1])
+    return doublesize_square
 
 
 def resize_to_pixel(dimensions, image):
@@ -61,76 +72,71 @@ def resize_to_pixel(dimensions, image):
     return ReSizedImg
 
 
+# Let's take a look at our digits dataset
+image = cv2.imread('digits.png')
+gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+small = cv2.pyrDown(image)
+cv2.imshow('Digits Image', small)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
-dataset = cv2.imread ('digits.png',0)
+# Split the image to 5000 cells, each 20x20 size
+# This gives us a 4-dim array: 50 x 100 x 20 x 20
+cells = [np.hsplit(row, 100) for row in np.vsplit(gray, 50)]
 
-# cv2.pyrDown() and cv2.pyrUp() functions ...
-# Higher level (Low resolution) in a Gaussian Pyramid is formed by removing consecutive rows and columns in Lower
-# level (higher resolution) image. Then each pixel in higher level is formed by the contribution from 5 pixels in
-# underlying level with gaussian weights. By doing so, a M x N image becomes M/2 x N/2 image. So area reduces
-# to one-fourth of original area. It is called an Octave.
-#small_dataset = cv2.pyrDown( dataset )
+# Convert the List data type to Numpy Array of shape (50,100,20,20)
+x = np.array(cells)
+print ("The shape of our cells array: " + str(x.shape))
 
-# numpy.vsplit - vertical split
-# numpy.hsplit - horizontal split
-# making a list data-type ( 50, 100, 20, 20) out of 5000 pixels dataset
-dataset_4d_list = [np.hsplit(row, 100) for row in np.vsplit( dataset, 50)]
-
-# making numpy array out of the list
-dataset_numpy_array = np.array(dataset_4d_list)
-
-
-# Split the full data set into two segments 70-30 spilt
+# Split the full data set into two segments
 # One will be used fro Training the model, the other as a test data set
-train_data = dataset_numpy_array[:, :70].reshape(-1, 400).astype(np.float32)  # Size = (3500,400)
-test_data = dataset_numpy_array[:, 70:100].reshape(-1, 400).astype(np.float32)  # Size = (1500,400)
+train = x[:, :70].reshape(-1, 400).astype(np.float32)  # Size = (3500,400)
+test = x[:, 70:100].reshape(-1, 400).astype(np.float32)  # Size = (1500,400)
 
-
-# Making labels for ML
+# Create labels for train and test data
 k = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 train_labels = np.repeat(k, 350)[:, np.newaxis]
 test_labels = np.repeat(k, 150)[:, np.newaxis]
 
-
-# Machine Learning
-kth_nearest_neighbour = cv2.KNearest()
-kth_nearest_neighbour.train( train_data, train_labels)
-ret, result, neighbors, distance = kth_nearest_neighbour.find_nearest( test_data, k=3)
-
+# Initiate kNN, train the data, then test it with test data for k=3
+knn = cv2.KNearest()
+knn.train(train, train_labels)
+ret, result, neighbors, distance = knn.find_nearest(test, k=3)
 
 # Now we check the accuracy of classification
 # For that, compare the result with test_labels and check which are wrong
-# matches = (result == test_labels)
-# correct = np.count_nonzero(matches)
-# accuracy = correct * (100.0 / result.size)
-# print("Accuracy is = %.2f" % accuracy + "%")
+matches = result == test_labels
+correct = np.count_nonzero(matches)
+accuracy = correct * (100.0 / result.size)
+print("Accuracy is = %.2f" % accuracy + "%")
 
-image = cv2.imread( 'numbers.jpg')
+import numpy as np
+import cv2
 
-# Turn image gray
-image_gray = cv2.cvtColor( image, cv2.COLOR_BGR2GRAY)
+image = cv2.imread('numbers.jpg')
+gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+cv2.imshow("image", image)
+#cv2.imshow("gray", gray)
+cv2.waitKey(0)
 
-# Blurring image
-image_blurred = cv2.GaussianBlur(image_gray, (5, 5), 0)
+# Blur image then find edges using Canny
+blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+#cv2.imshow("blurred", blurred)
+cv2.waitKey(0)
 
-# image thresholding
-#ret_thresh, image_thresh = cv2.threshold( image_blurred, 0, 255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
-#image_thresh = cv2.adaptiveThreshold(image_blurred,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
-#                cv2.THRESH_BINARY,11,2)
-#image_thresh = cv2.bitwise_not( image_thresh)
-#cv2.imshow( 'thresh', image_thresh)
+edged = cv2.Canny(blurred, 30, 70)
+#cv2.imshow("edged", edged)
+cv2.waitKey(0)
 
-image_edged = cv2.Canny(image_blurred, 30, 70)
-
-
-# finding numbers (contours) ; RETR_EXTERNAL - only the eldest contours
-contours, hierarchy = cv2.findContours( image_edged.copy(),cv2.RETR_EXTERNAL, \
-               cv2.CHAIN_APPROX_SIMPLE)
+# Fint Contours
+contours, _ = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
 # Sort out contours left to right by using their x cordinates
-contours = sorted(contours, key= Centroid_x_coordinate, reverse=False)
+contours = sorted(contours, key=x_cord_contour, reverse=False)
 print(len(contours))
 
+
+# Create empty array to store entire number
 full_number = []
 
 # loop over the contours
@@ -138,19 +144,20 @@ for c in contours:
     # compute the bounding box for the rectangle
     (x, y, w, h) = cv2.boundingRect(c)
 
-    #cv2.drawContours(image, contours, -1, (0,255,0), 3)
-    #cv2.imshow("Contours", image)
+    # cv2.drawContours(image, con
+    # tours, -1, (0,255,0), 3)
+    # cv2.imshow("Contours", image)
 
-    if w >= 5 and h >= 5:
-        roi = image_blurred[y:y + h, x:x + w]
+    if w >= 5 and h >= 25:
+        roi = blurred[y:y + h, x:x + w]
         ret, roi = cv2.threshold(roi, 127, 255, cv2.THRESH_BINARY_INV)
-        squared = make_square(roi)
+        squared = makeSquare(roi)
         final = resize_to_pixel(20, squared)
 
-        cv2.imshow( 'roi', final)
+        cv2.imshow( 'sq', final)
         final_array = final.reshape((1, 400))
         final_array = final_array.astype(np.float32)
-        ret, result, neighbours, dist = kth_nearest_neighbour.find_nearest(final_array, k=1)
+        ret, result, neighbours, dist = knn.find_nearest(final_array, k=1)
         number = str(int(float(result[0])))
         full_number.append(number)
         # draw a rectangle around the digit, the show what the
@@ -161,11 +168,9 @@ for c in contours:
         cv2.imshow("image", image)
         cv2.waitKey(0)
 
-#cv2.imshow( 'pyrdown', image_thresh)
-print( full_number)
-cv2.waitKey(0)
+
+
+
 cv2.destroyAllWindows()
-
-
-
+print ("The number is: " + ''.join(full_number))
 
